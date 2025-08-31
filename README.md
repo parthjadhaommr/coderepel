@@ -1,135 +1,75 @@
-# Turborepo starter
+# Online Web IDE
 
-This Turborepo starter is maintained by the Turborepo core team.
+This project is an online web-based Integrated Development Environment (IDE) that allows users to create and manage development environments directly in their browser. It provides a seamless, real-time coding experience with a dedicated container for each project.
 
-## Using this example
+---
 
-Run the following command:
+### Features
 
-```sh
-npx create-turbo@latest
-```
+Our MVP (Minimum Viable Product) focuses on providing a robust core experience, which includes:
 
-## What's inside?
+* **Project Creation:** Users can create a new project from a predefined template.
+* **Real-time Editor:** A live development loop where file changes are synchronized between the browser and the container.
+* **Integrated Terminal:** Full terminal access within the browser for running commands, managing processes, and interacting with the environment.
+* **Automatic Cleanup:** Runner Pods are automatically deleted when there are no active WebSocket connections, ensuring efficient resource management.
 
-This Turborepo includes the following packages/apps:
+---
 
-### Apps and Packages
+### Architecture
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+The system is built on a distributed, cloud-native architecture designed for scalability and performance.
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+#### High-Level Overview
 
-### Utilities
+The architecture consists of a few key services:
 
-This Turborepo has some additional tools already setup for you:
+* **Frontend (Browser):** The user interface for creating projects, editing code, and interacting with the terminal.
+* **HTTP API:** A backend service that handles user requests, such as creating a new project. It interacts with S3 to manage project templates and artifacts.
+* **Orchestrator:** A core service that manages the lifecycle of the runner pods in the Kubernetes cluster. It's responsible for creating a pod when a user wants to start a project and deleting it when the session ends.
+* **Runner Pod:** A dedicated container running the code runtime and a WebSocket server. This is where the user's code and files are located, and where all the real-time communication happens.
+* **S3 (Object Storage):** Stores base images (templates) for different project types and holds the project-specific code and artifacts.
+* **Kubernetes Cluster:** The underlying infrastructure that hosts and manages the Runner Pods.
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+```mermaid
+flowchart TB
+    subgraph Client["Frontend (Browser)"]
+      HP["Homepage and Project List"]
+      CP["Create Project Popup: template + title"]
+    end
 
-### Build
+    subgraph Backend["Backend Services"]
+      API["HTTP API Service"]
+      ORCH["Orchestrator (HTTP/WS)"]
+    end
 
-To build all apps and packages, run the following command:
+    subgraph Infra["Infrastructure"]
+      S3["S3 Object Storage"]
+      subgraph K8S["Kubernetes Cluster"]
+        RPod["Runner Pod\nWS Server + Code Runtime"]
+      end
+    end
 
-```
-cd my-turborepo
+    %% Browsing & project creation
+    HP --> CP
+    CP -- "Create Project (HTTP)" --> API
+    API -- "Get base image & copy to project bucket" --> S3
+    API -- "projectId, s3Path" --> CP
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
+    %% Pod orchestration
+    CP -- "Start Runner (HTTP)" --> ORCH
+    ORCH -- "create Pod" --> K8S
+    RPod -- "pull code" --> S3
+    RPod -- "ready: wsUrl/podId" --> ORCH
+    ORCH -- "wsUrl" --> Client
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
-```
+    %% Live dev loop
+    Client -- "WebSocket connect" --> RPod
+    Client == "File diffs (WS)" ==> RPod
+    Client == "Terminal I/O (WS)" ==> RPod
+    Client == "Process control (WS)" ==> RPod
+    RPod == "File updates / stdout / events (WS)" ==> Client
 
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
+    %% Auto cleanup
+    ORCH -. "watch health/WS count" .- RPod
+    ORCH -- "delete Pod if 0 WS" --> K8S
+    K8S -- "terminated" --> ORCH
